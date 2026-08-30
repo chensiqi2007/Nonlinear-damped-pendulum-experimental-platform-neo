@@ -1,0 +1,23 @@
+{
+  "name": "physicalexam",
+  "private": true,
+  "version": "2.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "start": "node server/index.mjs",
+    "test:physics": "node tests/pendulum-energy-drift.mjs"
+  },
+  "dependencies": {
+    "three": "^0.181.2"
+  },
+  "devDependencies": {
+    "@types/three": "^0.184.0",
+    "@vitejs/plugin-legacy": "^7.2.1",
+    "typescript": "^5.8.3",
+    "vite": "^7.1.2",
+    "vite-plugin-singlefile": "^2.3.3"
+  }
+}

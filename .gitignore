@@ -1,0 +1,51 @@
+# Local IDE and preview state
+.cursor/
+.idea/
+.vscode/
+.preview/
+
+# Dependencies and build output
+node_modules/
+dist/
+.vite/
+tsconfig.tsbuildinfo
+
+# Local secrets and environment overrides
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.secrets/
+.credentials/
+api/ai-round-robin.txt
+server/ai-round-robin.txt
+
+# Logs, coverage and operating-system files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+coverage/
+.nyc_output/
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Research, generated and locally supplied documents
+copyright/
+paper_check/
+paper_figures/
+paper_text.txt
+*.docx
+*.doc
+~$*
+fig_*.png
+forced_results.json
+
+# Local-only document generation helpers
+gen_*.py
+generate_*.py
+render_pdf.py
+extract_text.py
