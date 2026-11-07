@@ -49,7 +49,7 @@ class PendulumEngine {
     this.time = 0;
   }
 
-  private getDerivs(theta: number, omega: number, params: PendulumParams, time: number) {
+  private acceleration(theta: number, omega: number, params: PendulumParams, time: number, includeDamping = true) {
     const drive = params.mode === 'driven'
       ? params.driveAmplitude * Math.cos(params.driveFrequency * time)
       : 0;
@@ -60,22 +60,21 @@ class PendulumEngine {
       ? -(params.gravity / params.length) * theta
       : -(params.gravity / params.length) * Math.sin(theta);
     const dampingBoost = params.mode === 'damped' ? params.damping * 1.4 : params.damping;
-    return {
-      dTheta: omega,
-      dOmega: nonlinear - dampingBoost * omega + drive + chaosDrive,
-    };
+    return nonlinear + drive + chaosDrive - (includeDamping ? dampingBoost * omega : 0);
   }
 
   public step(dt: number, params: PendulumParams) {
     const s = this.state;
     const t = this.time;
-    const k1 = this.getDerivs(s.theta, s.omega, params, t);
-    const k2 = this.getDerivs(s.theta + (k1.dTheta * dt) / 2, s.omega + (k1.dOmega * dt) / 2, params, t + dt / 2);
-    const k3 = this.getDerivs(s.theta + (k2.dTheta * dt) / 2, s.omega + (k2.dOmega * dt) / 2, params, t + dt / 2);
-    const k4 = this.getDerivs(s.theta + k3.dTheta * dt, s.omega + k3.dOmega * dt, params, t + dt);
-
-    s.theta += (dt / 6) * (k1.dTheta + 2 * k2.dTheta + 2 * k3.dTheta + k4.dTheta);
-    s.omega += (dt / 6) * (k1.dOmega + 2 * k2.dOmega + 2 * k3.dOmega + k4.dOmega);
+    const damping = params.mode === 'damped' ? params.damping * 1.4 : params.damping;
+    const halfDamping = Math.exp((-damping * dt) / 2);
+    s.omega *= halfDamping;
+    const initialAcceleration = this.acceleration(s.theta, s.omega, params, t, false);
+    const nextTheta = s.theta + s.omega * dt + 0.5 * initialAcceleration * dt * dt;
+    const nextAcceleration = this.acceleration(nextTheta, s.omega, params, t + dt, false);
+    s.omega += 0.5 * (initialAcceleration + nextAcceleration) * dt;
+    s.theta = nextTheta;
+    s.omega *= halfDamping;
     this.time += dt;
     return { ...s };
   }
@@ -97,7 +96,7 @@ app.innerHTML = `
       <div>
         <div class="eyebrow">WebGL / Three.js 虚拟仿真实验 2.0</div>
         <h1>非线性阻尼单摆实验平台 NEO</h1>
-        <p>支持 RK4 数值积分、轨迹示踪、能量监测与相图分析。</p>
+        <p>支持 Velocity Verlet 数值积分、轨迹示踪、能量监测与相图分析。</p>
       </div>
       <div class="badge glass-badge">实验状态：在线</div>
     </header>
@@ -190,26 +189,46 @@ app.innerHTML = `
             </label>
           </div>
           <div class="actions">
-            <button id="toggleBtn">暂停</button>
-            <button class="secondary" id="resetBtn">重置实验</button>
+            <button id="toggleBtn" type="button" aria-pressed="true">暂停</button>
+            <button class="secondary" id="resetBtn" type="button">重置实验</button>
           </div>
           <div class="visual-toggle-group">
             <div class="visual-toggle-title">可视化显示</div>
-            <label class="visual-toggle">
+            <label class="visual-toggle switch-row">
               <span>能量图</span>
               <div class="visual-toggle-row">
                 <input id="energyToggle" type="checkbox" checked />
                 <strong id="energyToggleLabel">开启</strong>
               </div>
             </label>
-            <label class="visual-toggle">
+            <label class="visual-toggle switch-row">
               <span>相图</span>
               <div class="visual-toggle-row">
                 <input id="phaseToggle" type="checkbox" checked />
                 <strong id="phaseToggleLabel">开启</strong>
               </div>
             </label>
-            <label class="visual-toggle">
+            <div class="visual-range-card">
+              <div class="visual-range-head">
+                <span>θ 轴范围</span>
+                <strong><span id="phaseThetaRangeNumber">3.2</span> rad</strong>
+              </div>
+              <div class="range-with-input compact-range">
+                <input id="phaseThetaRange" type="range" min="0.5" max="8" step="0.1" value="3.2" />
+                <input id="phaseThetaRangeNumberInput" class="value-input" type="number" min="0.5" max="8" step="0.1" value="3.2" />
+              </div>
+            </div>
+            <div class="visual-range-card">
+              <div class="visual-range-head">
+                <span>ω 轴范围</span>
+                <strong><span id="phaseOmegaRangeNumber">6.5</span> rad/s</strong>
+              </div>
+              <div class="range-with-input compact-range">
+                <input id="phaseOmegaRange" type="range" min="0.5" max="20" step="0.1" value="6.5" />
+                <input id="phaseOmegaRangeNumberInput" class="value-input" type="number" min="0.5" max="20" step="0.1" value="6.5" />
+              </div>
+            </div>
+            <label class="visual-toggle switch-row">
               <span>三维摆动场景</span>
               <div class="visual-toggle-row">
                 <input id="sceneToggle" type="checkbox" checked />
@@ -230,6 +249,7 @@ app.innerHTML = `
             <div><span>Ek</span><strong id="ekReadout"></strong></div>
             <div><span>Ep</span><strong id="epReadout"></strong></div>
             <div><span>E</span><strong id="eReadout"></strong></div>
+            <div><span>能量漂移</span><strong id="energyDriftReadout">0.00%</strong></div>
             <div><span>记录数</span><strong id="recordCountReadout">0</strong></div>
           </div>
         </div>
@@ -314,11 +334,11 @@ app.innerHTML = `
           <div class="ai-config-grid">
             <div class="ai-config-static">
               <span>模型</span>
-              <strong>qwen-plus-2025-07-28</strong>
+              <strong>自动轮询</strong>
             </div>
             <div class="ai-config-static">
               <span>推理强度</span>
-              <strong>medium</strong>
+              <strong>实验上下文</strong>
             </div>
           </div>
           <div class="ai-chat" id="aiChat"></div>
@@ -328,7 +348,7 @@ app.innerHTML = `
             <button class="secondary" data-ai-prompt="如果阻尼变大，实验现象会怎样">参数分析</button>
           </div>
           <div class="ai-input-row">
-            <textarea id="aiInput" rows="3" placeholder="输入问题，例如：为什么初始角度变大时周期会变化？"></textarea>
+            <textarea id="aiInput" rows="3" maxlength="1200" placeholder="输入问题，例如：为什么初始角度变大时周期会变化？"></textarea>
             <div class="ai-input-actions">
               <button id="aiSendBtn">发送</button>
               <button class="secondary" id="aiStopBtn" disabled>停止生成</button>
@@ -362,19 +382,19 @@ app.innerHTML = `
             </div>
           </div>
 
-          <div class="mini-tabs" id="analysisTabs">
-            <button class="mini-tab active" data-panel="record">记录</button>
-            <button class="mini-tab" data-panel="energy">能量</button>
-            <button class="mini-tab" data-panel="phase">相图</button>
+          <div class="mini-tabs" id="analysisTabs" role="tablist" aria-label="实验分析视图">
+            <button class="mini-tab active" type="button" role="tab" aria-selected="true" data-panel="record">记录</button>
+            <button class="mini-tab" type="button" role="tab" aria-selected="false" data-panel="energy">能量</button>
+            <button class="mini-tab" type="button" role="tab" aria-selected="false" data-panel="phase">相图</button>
           </div>
 
-          <div class="analysis-panel active" data-panel="record">
+          <div class="analysis-panel active" role="tabpanel" data-panel="record">
             <div class="record-list" id="recordList"></div>
           </div>
-          <div class="analysis-panel" data-panel="energy">
+          <div class="analysis-panel" role="tabpanel" data-panel="energy" hidden>
             <canvas id="energyCanvas" width="420" height="240"></canvas>
           </div>
-          <div class="analysis-panel" data-panel="phase">
+          <div class="analysis-panel" role="tabpanel" data-panel="phase" hidden>
             <canvas id="phaseCanvas" width="420" height="240"></canvas>
           </div>
         </div>
@@ -428,21 +448,8 @@ app.innerHTML = `
     <footer class="site-footer">
       <div class="container footer-inner">
         <div class="footer-content">
-          <a href="https://tw.urltime.live" class="footer-link">
-            © <span id="year"></span> 臺北重定向集團有限公司
-          </a>
-          <span class="divider">|</span>
-          <a href="https://beian.miit.gov.cn/" target="_blank" class="footer-link icp-link" rel="noreferrer">
-            沪ICP备2026008612号-1
-          </a>
-          <span class="divider">|</span>
-          <a href="https://beian.mps.gov.cn/#/query/webSearch?code=31011502405443" target="_blank" class="footer-link icp-link" rel="noreferrer">
-            沪公网安备31011502405443号
-          </a>
-          <span class="divider">|</span>
-          <p>Copyright ©2026 URL Time LTD.</p>
-          <span class="divider">|</span>
-          <p>由 阿里云 提供计算服务</p>
+          <p>非线性阻尼单摆虚拟仿真实验平台 · 基于 WebGL 与 Three.js 自主开发</p>
+          <p class="footer-record-links"><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">沪ICP备2026008612号-1</a><span class="divider">·</span><a href="https://beian.mps.gov.cn/#/query/webSearch?code=31011502405443" target="_blank" rel="noopener noreferrer">沪公网安备31011502405443号</a></p>
         </div>
       </div>
     </footer>
@@ -939,26 +946,49 @@ style.textContent = `
   .mode-card strong { font-size: 13px; }
   .visual-toggle-group {
     display: grid;
-    gap: 8px;
+    gap: 10px;
     margin-top: 10px;
-    padding: 12px;
-    border-radius: 14px;
+    padding: 14px;
+    border-radius: 18px;
     border: 1px solid rgba(255,255,255,0.08);
-    background: rgba(255,255,255,0.04);
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.03)),
+      rgba(255,255,255,0.03);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
   }
-  .visual-toggle-title { color: #fff; font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+  .visual-toggle-title { color: #fff; font-size: 13px; font-weight: 700; letter-spacing: 0.02em; margin-bottom: 2px; }
   .visual-toggle {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 8px 0;
+    padding: 4px 0;
   }
-  .visual-toggle + .visual-toggle { border-top: 1px solid rgba(255,255,255,0.08); }
+  .visual-toggle + .visual-toggle { border-top: 1px solid rgba(255,255,255,0.08); padding-top: 10px; }
   .visual-toggle span { color: var(--muted); font-size: 13px; }
   .visual-toggle-row { display: inline-flex; align-items: center; gap: 10px; }
-  .visual-toggle input { width: 18px; height: 18px; accent-color: var(--accent-2); }
+  .switch-row input { width: 18px; height: 18px; accent-color: var(--accent-2); }
   .visual-toggle strong { font-size: 13px; color: #fff; }
+  .visual-range-card {
+    padding: 10px 12px 12px;
+    border-radius: 14px;
+    background: rgba(8, 13, 24, 0.35);
+    border: 1px solid rgba(255,255,255,0.07);
+  }
+  .visual-range-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .visual-range-head span { color: var(--muted); font-weight: 600; }
+  .visual-range-head strong { color: #fff; font-size: 12px; }
+  .compact-range { gap: 10px; }
+  .compact-range .value-input { width: 80px; }
   button {
     position: relative;
     border: 1px solid rgba(255,255,255,0.18);
@@ -1356,6 +1386,11 @@ style.textContent = `
     opacity: 1;
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.18);
   }
+  .mini-tab:focus-visible,
+  button:focus-visible {
+    outline: 2px solid var(--accent-2);
+    outline-offset: 2px;
+  }
   .analysis-panel {
     display: none;
   }
@@ -1372,6 +1407,7 @@ style.textContent = `
     transform: scale(1.01);
     filter: brightness(1.04);
   }
+  .analysis-panel[hidden] { display: none !important; }
   .scene-panel {
     display: flex;
     flex-direction: column;
@@ -1654,6 +1690,19 @@ style.textContent = `
   .footer-content p {
     margin: 0;
   }
+  .footer-record-links {
+    margin-top: 4px !important;
+    font-size: 12px;
+  }
+  .footer-record-links a {
+    color: inherit;
+    text-decoration: none;
+  }
+  .footer-record-links a:hover,
+  .footer-record-links a:focus-visible {
+    color: #fff;
+    text-decoration: underline;
+  }
   @keyframes breathe {
     0%, 100% { transform: translateY(0) scale(1); }
     50% { transform: translateY(-1px) scale(1.01); }
@@ -1682,6 +1731,15 @@ style.textContent = `
       inset 0 10px 24px rgba(255,255,255,0.03);
     transition: transform 200ms ease, filter 200ms ease;
     min-height: 0;
+    touch-action: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      scroll-behavior: auto !important;
+      transition-duration: 0.01ms !important;
+    }
   }
   @media (max-width: 1320px) {
     .workspace { grid-template-columns: minmax(290px, 340px) minmax(0, 1fr); gap: 10px; }
@@ -1728,6 +1786,18 @@ style.textContent = `
     .record-actions { grid-template-columns: 1fr; }
     .lab-result { grid-template-columns: 1fr; }
     .scene-debug { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .topbar { align-items: flex-start; flex-direction: column; }
+    .glass-badge { width: 100%; text-align: center; }
+    .scene-panel { position: relative; top: auto; height: min(58vh, 460px); }
+    .ai-quick-actions { grid-template-columns: 1fr; }
+    .ai-input-actions { grid-template-columns: 1fr; }
+    button { min-height: 44px; }
+  }
+  @media (max-width: 430px) {
+    .stats-grid-compact { grid-template-columns: 1fr 1fr; }
+    .mini-tabs { gap: 4px; padding: 4px; }
+    .mini-tab { font-size: 11px; padding: 9px 4px; }
+    .scene-header-right, .legend { display: none; }
   }
 `;
 document.head.appendChild(style);
@@ -1798,11 +1868,36 @@ const recordCountReadout = mustGetElement<HTMLSpanElement>('#recordCountReadout'
 const recordList = mustGetElement<HTMLDivElement>('#recordList');
 const analysisTabs = mustGetElement<HTMLDivElement>('#analysisTabs');
 const analysisPanels = Array.from(document.querySelectorAll<HTMLElement>('.analysis-panel'));
+let activeAnalysisPanel: 'record' | 'energy' | 'phase' = 'record';
 const modeGrid = mustGetElement<HTMLDivElement>('#modeGrid');
 const modeCards = Array.from(document.querySelectorAll<HTMLButtonElement>('.mode-card'));
 const energyToggle = mustGetElement<HTMLInputElement>('#energyToggle');
 const phaseToggle = mustGetElement<HTMLInputElement>('#phaseToggle');
+const phaseThetaRangeInput = mustGetElement<HTMLInputElement>('#phaseThetaRange');
+const phaseThetaRangeNumberInput = mustGetElement<HTMLInputElement>('#phaseThetaRangeNumberInput');
+const phaseOmegaRangeInput = mustGetElement<HTMLInputElement>('#phaseOmegaRange');
+const phaseOmegaRangeNumberInput = mustGetElement<HTMLInputElement>('#phaseOmegaRangeNumberInput');
 const sceneToggle = mustGetElement<HTMLInputElement>('#sceneToggle');
+phaseThetaRangeInput.addEventListener('input', () => {
+  phaseThetaRange = Number(phaseThetaRangeInput.value);
+  phaseThetaRangeNumberInput.value = phaseThetaRange.toFixed(1);
+  drawPhaseChart();
+});
+phaseThetaRangeNumberInput.addEventListener('input', () => {
+  phaseThetaRange = Number(phaseThetaRangeNumberInput.value);
+  phaseThetaRangeInput.value = phaseThetaRange.toFixed(1);
+  drawPhaseChart();
+});
+phaseOmegaRangeInput.addEventListener('input', () => {
+  phaseOmegaRange = Number(phaseOmegaRangeInput.value);
+  phaseOmegaRangeNumberInput.value = phaseOmegaRange.toFixed(1);
+  drawPhaseChart();
+});
+phaseOmegaRangeNumberInput.addEventListener('input', () => {
+  phaseOmegaRange = Number(phaseOmegaRangeNumberInput.value);
+  phaseOmegaRangeInput.value = phaseOmegaRange.toFixed(1);
+  drawPhaseChart();
+});
 const energyToggleLabel = mustGetElement<HTMLSpanElement>('#energyToggleLabel');
 const phaseToggleLabel = mustGetElement<HTMLSpanElement>('#phaseToggleLabel');
 const sceneToggleLabel = mustGetElement<HTMLSpanElement>('#sceneToggleLabel');
@@ -1816,6 +1911,7 @@ const valueLabels = {
   ek: mustGetElement<HTMLSpanElement>('#ekReadout'),
   ep: mustGetElement<HTMLSpanElement>('#epReadout'),
   e: mustGetElement<HTMLSpanElement>('#eReadout'),
+  energyDrift: mustGetElement<HTMLSpanElement>('#energyDriftReadout'),
 };
 const pendulumLengthReadout = mustGetElement<HTMLInputElement>('#pendulumLengthReadout');
 const periodInputReadout = mustGetElement<HTMLSpanElement>('#periodInput');
@@ -1831,7 +1927,8 @@ let simTime = 0;
 const stateTrail: Array<{ x: number; y: number }> = [];
 const phaseTrail: Array<{ theta: number; omega: number }> = [];
 const energySamples: SamplePoint[] = [];
-const experimentRecords: Array<{ t: number; theta: number; omega: number; energy: number; id: number; cycle: number }> = [];
+type ExperimentRecord = { t: number; theta: number; omega: number; energy: number; id: number; cycle: number };
+const experimentRecords: ExperimentRecord[] = [];
 type ConversationRole = 'user' | 'assistant';
 type ConversationMessage = { role: ConversationRole; content: string };
 const aiMessages: Array<{ role: 'user' | 'assistant'; title: string; content: string }> = [];
@@ -1851,10 +1948,32 @@ let stopwatchFinished = false;
 let measuredGravity = 0;
 let energyVisualEnabled = true;
 let phaseVisualEnabled = true;
+let phaseThetaRange = 3.2;
+let phaseOmegaRange = 6.5;
 let sceneVisualEnabled = true;
+let paramsDirty = true;
+let renderedRecordCount = -1;
+let experimentRecordsLoaded = false;
+let experimentRecordSaveTimer: number | null = null;
+let experimentRecordSavePending = false;
+let rendererWidth = 0;
+let rendererHeight = 0;
+const FIXED_STEP = 0.00001;
+const MAX_SUBSTEPS_PER_FRAME = 5000;
+const DISPLAY_STEP = 1 / 60;
+const IDLE_RENDER_STEP = 1 / 30;
+let simulationAccumulator = 0;
+let displayAccumulator = 0;
+let referenceEnergy = 0;
+let maxEnergyDrift = 0;
+let sceneNeedsRender = true;
+let pendingPointerEvent: PointerEvent | null = null;
+let pointerFrameRequested = false;
+let aiRenderFrameRequested = false;
 
 const renderer = new THREE.WebGLRenderer({ canvas: sceneCanvas, antialias: true, alpha: true });
-renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.setClearColor(0x000000, 0);
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0x07101f, 9, 24);
 const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
@@ -1929,7 +2048,13 @@ const base = new THREE.Mesh(
 base.rotation.x = -Math.PI / 2;
 base.position.y = -2.6;
 scene.add(base);
-const trailLine = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x6fffe9, transparent: true, opacity: 0.9 }));
+const trailPositions = new Float32Array(240 * 3);
+const trailGeometry = new THREE.BufferGeometry();
+const trailPositionAttribute = new THREE.BufferAttribute(trailPositions, 3);
+trailPositionAttribute.setUsage(THREE.DynamicDrawUsage);
+trailGeometry.setAttribute('position', trailPositionAttribute);
+trailGeometry.setDrawRange(0, 0);
+const trailLine = new THREE.Line(trailGeometry, new THREE.LineBasicMaterial({ color: 0x6fffe9, transparent: true, opacity: 0.9 }));
 scene.add(trailLine);
 const grid = new THREE.GridHelper(6, 12, 0x4066c4, 0x1a2854);
 grid.position.y = -1.69;
@@ -1969,6 +2094,7 @@ function setPendulumFromPointer(event: PointerEvent) {
   const current = engine.getState();
   engine.reset(theta, current.omega * 0.85);
   simTime = 0;
+  resetEnergyTracking();
   if (recording) {
     pushExperimentRecord(theta, current.omega * 0.85);
     renderRecords();
@@ -2006,19 +2132,31 @@ function updateLabels() {
   valueLabels.theta0.textContent = `${(params.theta0 * 180 / Math.PI).toFixed(0)}°`;
   const pendulumLength = Number(stringLengthInput.value) / 100 + Number(ballDiameterInput.value) / 200;
   pendulumLengthReadout.value = `${(pendulumLength * 100).toFixed(2)} cm`;
+  phaseThetaRangeNumberInput.value = phaseThetaRange.toFixed(1);
+  phaseOmegaRangeNumberInput.value = phaseOmegaRange.toFixed(1);
+  phaseThetaRangeInput.value = phaseThetaRange.toFixed(1);
+  phaseOmegaRangeInput.value = phaseOmegaRange.toFixed(1);
   modeCards.forEach((card) => {
-    card.classList.toggle('active', card.dataset.mode === params.mode);
+    const isActive = card.dataset.mode === params.mode;
+    card.classList.toggle('active', isActive);
+    card.setAttribute('aria-pressed', String(isActive));
   });
   updateModeTags();
 }
 
 function switchAnalysisPanel(panel: 'record' | 'energy' | 'phase') {
+  activeAnalysisPanel = panel;
   analysisTabs.querySelectorAll<HTMLButtonElement>('.mini-tab').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.panel === panel);
+    btn.setAttribute('aria-selected', String(btn.dataset.panel === panel));
   });
   analysisPanels.forEach((node) => {
-    node.classList.toggle('active', node.dataset.panel === panel);
+    const isActive = node.dataset.panel === panel;
+    node.classList.toggle('active', isActive);
+    node.hidden = !isActive;
   });
+  if (panel === 'energy' && energyVisualEnabled) drawEnergyChart();
+  if (panel === 'phase' && phaseVisualEnabled) drawPhaseChart();
 }
 
 let labCollapsed = false;
@@ -2052,6 +2190,8 @@ function syncParams() {
   dampingNumberInput.value = params.damping.toFixed(2);
   theta0NumberInput.value = String(Math.round((params.theta0 * 180) / Math.PI));
   updateLabels();
+  resetEnergyTracking();
+  paramsDirty = false;
 }
 
 function getLabLengthMeters() {
@@ -2090,6 +2230,12 @@ function computeEnergy(theta: number, omega: number) {
   return { ek, ep, total: ek + ep };
 }
 
+function resetEnergyTracking() {
+  const state = engine.getState();
+  referenceEnergy = computeEnergy(state.theta, state.omega).total;
+  maxEnergyDrift = 0;
+}
+
 function updateEnergyReadout(theta: number, omega: number) {
   const { ek, ep, total } = computeEnergy(theta, omega);
   valueLabels.theta.textContent = formatSigned(theta);
@@ -2097,6 +2243,16 @@ function updateEnergyReadout(theta: number, omega: number) {
   valueLabels.ek.textContent = ek.toFixed(3);
   valueLabels.ep.textContent = ep.toFixed(3);
   valueLabels.e.textContent = total.toFixed(3);
+  const conservative = params.damping === 0 && params.mode !== 'damped' && params.mode !== 'driven' && params.mode !== 'chaotic';
+  if (conservative && referenceEnergy > 0) {
+    const drift = ((total - referenceEnergy) / referenceEnergy) * 100;
+    maxEnergyDrift = Math.max(maxEnergyDrift, Math.abs(drift));
+    valueLabels.energyDrift.textContent = `${drift >= 0 ? '+' : ''}${drift.toFixed(2)}%`;
+    valueLabels.energyDrift.title = `最大绝对漂移 ${maxEnergyDrift.toFixed(2)}%`;
+  } else {
+    valueLabels.energyDrift.textContent = '—';
+    valueLabels.energyDrift.title = '阻尼或外力模式下，能量变化包含物理耗散或外部做功';
+  }
 }
 
 function pushEnergySample(theta: number, omega: number) {
@@ -2110,6 +2266,7 @@ function pushExperimentRecord(theta: number, omega: number) {
   const { total } = computeEnergy(theta, omega);
   experimentRecords.push({ t: simTime, theta, omega, energy: total, id: recordId++, cycle: recordCycle + 1 });
   if (experimentRecords.length > 120) experimentRecords.shift();
+  scheduleExperimentRecordsSave();
 }
 
 
@@ -2339,8 +2496,8 @@ function drawPhaseChart() {
   const chartWidth = Math.max(1, phaseCanvas.width - padding * 2);
   drawChartAxes(ctx, padding, '相图 / θ-ω');
   if (phaseTrail.length < 2) return;
-  const thetaRange = 3.2;
-  const omegaRange = 6.5;
+  const thetaRange = Math.max(0.5, phaseThetaRange);
+  const omegaRange = Math.max(0.5, phaseOmegaRange);
   const xFor = (theta: number) => padding + ((theta + thetaRange) / (thetaRange * 2)) * chartWidth;
   const yFor = (omega: number) => chartBottom - ((omega + omegaRange) / (omegaRange * 2)) * chartHeight;
 
@@ -2357,8 +2514,16 @@ function drawPhaseChart() {
   ctx.stroke();
   ctx.restore();
 
-  const thetaTicks = [-3, -2, -1, 0, 1, 2, 3].map((value) => ({ x: ((value + thetaRange) / (thetaRange * 2)), label: `${value}` }));
-  const omegaTicks = [-6, -4, -2, 0, 2, 4, 6].map((value) => ({ y: ((value + omegaRange) / (omegaRange * 2)), label: `${value}` }));
+  const thetaTickCount = 6;
+  const omegaTickCount = 6;
+  const thetaTicks = Array.from({ length: thetaTickCount * 2 + 1 }, (_, index) => {
+    const value = -thetaRange + (index * thetaRange) / thetaTickCount;
+    return { x: (value + thetaRange) / (thetaRange * 2), label: value.toFixed(thetaRange < 2 ? 1 : 0) };
+  });
+  const omegaTicks = Array.from({ length: omegaTickCount * 2 + 1 }, (_, index) => {
+    const value = -omegaRange + (index * omegaRange) / omegaTickCount;
+    return { y: (value + omegaRange) / (omegaRange * 2), label: value.toFixed(omegaRange < 2 ? 1 : 0) };
+  });
   drawChartTicks(ctx, padding, chartBottom, chartWidth, chartHeight, thetaTicks, omegaTicks, { fontSize: 11, xOffset: 8, yOffset: 20 });
 
   const modeLabel = params.mode === 'small'
@@ -2427,6 +2592,7 @@ function drawPhaseChart() {
   const labelY = Math.min(phaseCanvas.height - 10, chartBottom + 22);
   ctx.fillText(`当前点 θ=${latest.theta.toFixed(2)} rad`, padding, labelY);
   ctx.fillText(`ω=${latest.omega.toFixed(2)} rad/s`, padding + 170, labelY);
+  ctx.fillText(`范围 θ±${thetaRange.toFixed(1)} / ω±${omegaRange.toFixed(1)}`, padding + 320, labelY);
 }
 
 
@@ -2456,11 +2622,15 @@ function updateScene() {
   const y = -lenScale * Math.cos(visualTheta) + focusLift;
   stateTrail.push({ x, y });
   if (stateTrail.length > 240) stateTrail.shift();
-  const positions = new Float32Array(stateTrail.flatMap((p) => [p.x, p.y, 0]));
-  trailLine.geometry.dispose();
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  trailLine.geometry = geometry;
+  stateTrail.forEach((point, index) => {
+    const offset = index * 3;
+    trailPositions[offset] = point.x;
+    trailPositions[offset + 1] = point.y;
+    trailPositions[offset + 2] = 0;
+  });
+  trailPositionAttribute.needsUpdate = true;
+  trailGeometry.setDrawRange(0, stateTrail.length);
+  sceneNeedsRender = true;
 }
 
 function getSceneSize() {
@@ -2484,19 +2654,26 @@ function updateSceneDebug() {
 
 function resizeRendererIfNeeded() {
   const { width, height } = getSceneSize();
-  const needsResize = sceneCanvas.width !== width || sceneCanvas.height !== height;
+  const targetPixelRatio = Math.min(window.devicePixelRatio || 1, window.innerWidth < 900 ? 1.5 : 2);
+  const pixelRatioChanged = renderer.getPixelRatio() !== targetPixelRatio;
+  const needsResize = rendererWidth !== width || rendererHeight !== height || pixelRatioChanged;
   if (!needsResize) return false;
+  if (pixelRatioChanged) renderer.setPixelRatio(targetPixelRatio);
   renderer.setSize(width, height, false);
+  rendererWidth = width;
+  rendererHeight = height;
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
+  sceneNeedsRender = true;
   return true;
 }
 
 function render() {
-  resizeRendererIfNeeded();
-  renderer.setClearColor(0x000000, 0);
+  const resized = resizeRendererIfNeeded();
+  if (!resized && !sceneNeedsRender) return;
   renderer.render(scene, camera);
-  updateSceneDebug();
+  sceneNeedsRender = false;
+  if (resized) updateSceneDebug();
 }
 
 function updateLightTheme(clientX: number, clientY: number) {
@@ -2528,6 +2705,23 @@ function updateSceneGlow(event: PointerEvent) {
   sceneCanvas.style.setProperty('--scene-mx', `${x.toFixed(2)}%`);
   sceneCanvas.style.setProperty('--scene-my', `${y.toFixed(2)}%`);
   pointer.set(x / 50 - 1, -(y / 50 - 1));
+}
+
+function queuePointerVisualUpdate(event: PointerEvent) {
+  lastPointerX = event.clientX;
+  lastPointerY = event.clientY;
+  pendingPointerEvent = event;
+  if (pointerFrameRequested) return;
+  pointerFrameRequested = true;
+  requestAnimationFrame(() => {
+    pointerFrameRequested = false;
+    const latestEvent = pendingPointerEvent;
+    pendingPointerEvent = null;
+    if (!latestEvent) return;
+    updateLightTheme(latestEvent.clientX, latestEvent.clientY);
+    updateCardGlow(latestEvent);
+    if (latestEvent.target === sceneCanvas) updateSceneGlow(latestEvent);
+  });
 }
 
 function formatStopwatch(ms: number) {
@@ -2608,20 +2802,99 @@ function renderRecords() {
         })
         .join('')
     : '<div class="record-item">尚无记录。开始记录后，系统将按每次摆动周期自动保存实验数据。</div>';
+  renderedRecordCount = experimentRecords.length;
+}
+
+async function loadExperimentRecords() {
+  const localRecords = experimentRecords.slice();
+  const hadLocalRecords = localRecords.length > 0;
+  try {
+    const response = await fetch('/api/records.php', { cache: 'no-store' });
+    if (!response.ok) throw new Error('records request failed');
+    const payload = await response.json() as { records?: ExperimentRecord[] };
+    const records = Array.isArray(payload.records) ? payload.records : [];
+    const remoteRecords = records.slice(-120);
+    if (localRecords.length === 0) {
+      experimentRecords.splice(0, experimentRecords.length, ...remoteRecords);
+    } else if (remoteRecords.length > 0) {
+      const nextId = Math.max(0, ...remoteRecords.map((record) => record.id)) + 1;
+      const pendingRecords = localRecords.map((record, index) => ({ ...record, id: nextId + index }));
+      experimentRecords.splice(0, experimentRecords.length, ...[...remoteRecords, ...pendingRecords].slice(-120));
+    }
+    recordId = Math.max(0, ...experimentRecords.map((record) => record.id)) + 1;
+    recordCycle = Math.max(0, ...experimentRecords.map((record) => record.cycle));
+  } catch {
+    if (!hadLocalRecords) {
+      experimentRecords.length = 0;
+      recordId = 1;
+      recordCycle = 0;
+    }
+  } finally {
+    experimentRecordsLoaded = true;
+    renderRecords();
+    if (hadLocalRecords) void saveExperimentRecords();
+  }
+}
+
+async function refreshExperimentRecords() {
+  if (!experimentRecordsLoaded) return;
+  try {
+    const response = await fetch('/api/records.php', { cache: 'no-store' });
+    if (!response.ok) return;
+    const payload = await response.json() as { records?: ExperimentRecord[]; expiresAt?: number | null };
+    if (payload.expiresAt === null && experimentRecords.length > 0 && !experimentRecordSavePending) {
+      experimentRecords.length = 0;
+      recordId = 1;
+      recordCycle = 0;
+      renderRecords();
+    }
+  } catch {
+  }
+}
+
+function scheduleExperimentRecordsSave() {
+  if (!experimentRecordsLoaded) return;
+  experimentRecordSavePending = true;
+  if (experimentRecordSaveTimer !== null) return;
+  experimentRecordSaveTimer = window.setTimeout(() => {
+    experimentRecordSaveTimer = null;
+    if (experimentRecordSavePending) void saveExperimentRecords();
+  }, 250);
+}
+
+async function saveExperimentRecords() {
+  if (!experimentRecordsLoaded) return;
+  experimentRecordSavePending = false;
+  try {
+    const response = await fetch('/api/records.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ records: experimentRecords }),
+      keepalive: true,
+    });
+    if (!response.ok) throw new Error('records save failed');
+  } catch {
+    experimentRecordSavePending = true;
+    scheduleExperimentRecordsSave();
+  }
+}
+
+async function clearSavedExperimentRecords() {
+  try {
+    await fetch('/api/records.php', { method: 'DELETE', keepalive: true });
+  } catch {
+  }
 }
 
 function getAiConfig() {
-  const dashscopeApiKey = (import.meta as ImportMeta & { env?: { VITE_DASHSCOPE_API_KEY?: string } }).env?.VITE_DASHSCOPE_API_KEY || '';
   return {
-    apiKey: dashscopeApiKey,
-    model: 'qwen-plus-2025-07-28',
-    reasoningEffort: 'medium',
+    endpoint: '/api/chat.php',
+    apiKey: 'server-side',
   };
 }
 
 function saveAiConfig() {
-  localStorage.removeItem('scnet-ai-model');
-  localStorage.removeItem('scnet-ai-reasoning-effort');
+  return;
 }
 
 function persistConversation(responseId: string | undefined) {
@@ -2657,9 +2930,38 @@ function setAiStatus(text: string) {
   aiStatusReadout.classList.toggle('ai-status', text.includes('生成') || text.includes('发送') || text.includes('请求'));
 }
 
-function setAiConfigStatus() {
-  const key = getAiConfig().apiKey;
-  setAiStatus(key ? '已配置' : '未配置');
+async function fetchAiHealth() {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 5000);
+  try {
+    return await fetch('/api/health.php', { cache: 'no-store', signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+async function setAiConfigStatus() {
+  setAiStatus('正在连接 AI 服务');
+  try {
+    const response = await fetchAiHealth();
+    if (!response.ok) throw new Error('health check failed');
+    const health = await response.json() as { configured?: boolean; records?: boolean; providers?: number; models?: number };
+    if (health.records !== true) {
+      setAiStatus('请重启 AI 服务');
+      return;
+    }
+    if (health.configured === false) {
+      setAiStatus('服务端未配置密钥');
+      return;
+    }
+    if (health.configured !== true) {
+      setAiStatus('请重启 AI 服务');
+      return;
+    }
+    setAiStatus(`已连接 · ${health.providers ?? 0}节点 / ${health.models ?? 0}模型`);
+  } catch {
+    setAiStatus('AI 服务未启动');
+  }
 }
 
 function setMode(mode: PendulumMode) {
@@ -2693,6 +2995,7 @@ function setVisualState(kind: 'energy' | 'phase' | 'scene', enabled: boolean) {
     energyToggle.checked = enabled;
     energyToggleLabel.textContent = enabled ? '开启' : '关闭';
     if (!enabled) clearCanvas(energyCanvas.getContext('2d')!);
+    else if (activeAnalysisPanel === 'energy') drawEnergyChart();
     return;
   }
   if (kind === 'phase') {
@@ -2700,6 +3003,7 @@ function setVisualState(kind: 'energy' | 'phase' | 'scene', enabled: boolean) {
     phaseToggle.checked = enabled;
     phaseToggleLabel.textContent = enabled ? '开启' : '关闭';
     if (!enabled) clearCanvas(phaseCanvas.getContext('2d')!);
+    else if (activeAnalysisPanel === 'phase') drawPhaseChart();
     return;
   }
   sceneVisualEnabled = enabled;
@@ -2707,6 +3011,7 @@ function setVisualState(kind: 'energy' | 'phase' | 'scene', enabled: boolean) {
   sceneToggleLabel.textContent = enabled ? '开启' : '关闭';
   sceneCanvas.style.opacity = enabled ? '' : '0';
   sceneCanvas.style.pointerEvents = enabled ? '' : 'none';
+  if (enabled) sceneNeedsRender = true;
 }
 
 function formatAiContent(content: string) {
@@ -2738,7 +3043,12 @@ function updateAiMessage(index: number, content: string) {
   const message = aiMessages[index];
   if (!message) return;
   message.content = formatAiContent(content);
-  renderAiMessages();
+  if (aiRenderFrameRequested) return;
+  aiRenderFrameRequested = true;
+  requestAnimationFrame(() => {
+    aiRenderFrameRequested = false;
+    renderAiMessages();
+  });
 }
 
 function summarizeExperiment() {
@@ -2749,32 +3059,117 @@ function summarizeExperiment() {
   return `当前摆长 ${(params.length).toFixed(2)} cm，阻尼 ${params.damping.toFixed(2)}，初始角度 ${(params.theta0 * 180 / Math.PI).toFixed(0)}°。最近数据 θ=${theta.toFixed(3)} rad，ω=${omega.toFixed(3)} rad/s，机械能约 ${total.toFixed(3)} J。Ek=${ek.toFixed(3)} J，Ep=${ep.toFixed(3)} J。`;
 }
 
-function buildAiMessages(question: string) {
-  const system = {
-    role: 'system',
-    content: [
-      '你是一个单摆实验助手，目标是帮助学生快速完成课堂实验与报告。',
-      '回答要求：',
-      '1. 用中文，简洁清楚，直接给结论。',
-      '2. 不要使用 Markdown 符号、标题、加粗、项目符号、列表编号。',
-      '3. 回答按三段输出，分别是“结论”“怎么做”“注意事项”，每段用自然语言写成一小段即可。',
-      '4. 如果数据不完整，明确指出缺少哪些数据，并给出最小补充建议。',
-      '5. 如果用户要求只看结论，就只输出一段结论。',
-      '6. 不要输出与问题无关的长篇解释。',
-    ].join('\n'),
+function buildPhysicsAiMessages(question: string) {
+  const state = engine.getState();
+  const { ek, ep, total } = computeEnergy(state.theta, state.omega);
+  const totalTime = Number(totalTimeInput.value);
+  const cycleCount = Math.max(1, Number(cycleCountInput.value) || 1);
+  const measuredPeriod = Number.isFinite(totalTime) && totalTime > 0 ? totalTime / cycleCount : null;
+  const labLength = getLabLengthMeters();
+  const calculatedGravity = measuredPeriod
+    ? (4 * Math.PI * Math.PI * labLength) / (measuredPeriod * measuredPeriod)
+    : null;
+  const conservative = params.damping === 0 && params.mode !== 'damped' && params.mode !== 'driven' && params.mode !== 'chaotic';
+  const contextData = {
+    parameters: {
+      mode: params.mode,
+      mode_label: getModeMeta(params.mode).label,
+      length_m: params.length,
+      gravity_m_s2: params.gravity,
+      damping: params.damping,
+      mass_kg: params.mass,
+      initial_angle_deg: (params.theta0 * 180) / Math.PI,
+      drive_amplitude: params.driveAmplitude,
+      drive_frequency_hz: params.driveFrequency,
+    },
+    current_state: {
+      simulation_time_s: simTime,
+      angle_rad: state.theta,
+      angle_deg: (state.theta * 180) / Math.PI,
+      angular_velocity_rad_s: state.omega,
+      kinetic_energy_j: ek,
+      potential_energy_j: ep,
+      total_energy_j: total,
+      running,
+    },
+    measurement: {
+      string_length_cm: Number(stringLengthInput.value) || null,
+      ball_diameter_cm: Number(ballDiameterInput.value) || null,
+      effective_length_m: Number.isFinite(labLength) ? labLength : null,
+      cycle_count: cycleCount,
+      total_time_s: Number.isFinite(totalTime) && totalTime > 0 ? totalTime : null,
+      period_s: measuredPeriod,
+      calculated_gravity_m_s2: Number.isFinite(measuredGravity) && measuredGravity > 0 ? measuredGravity : calculatedGravity,
+      gravity_error_percent: measuredPeriod && params.gravity > 0
+        ? ((calculatedGravity! - params.gravity) / params.gravity) * 100
+        : null,
+    },
+    observation: {
+      recorded_samples: experimentRecords.length,
+      recent_records: experimentRecords.slice(-10).map((record) => ({
+        time_s: record.t,
+        angle_rad: record.theta,
+        angular_velocity_rad_s: record.omega,
+        total_energy_j: record.energy,
+        cycle: record.cycle,
+      })),
+      energy_drift_percent: conservative ? maxEnergyDrift : null,
+    },
+    numerical_method: {
+      integrator: 'velocity Verlet',
+      fixed_step_us: 10,
+      chart_refresh_hz: 60,
+      note: conservative ? '可用能量漂移评估长期稳定性' : '阻尼或外力模式下能量变化包含物理耗散或外部做功',
+    },
   };
-  const history = conversationHistory.map((msg) => ({ role: msg.role, content: msg.content }));
-  const context = {
-    role: 'user',
-    content: `实验背景：${summarizeExperiment()}\n当前问题：${question}\n\n请优先结合实验背景回答。`,
-  };
-  return [system, ...history, context];
+  const systemPrompt = [
+    '你是大学物理实验指导教师，负责指导非线性单摆数字孪生实验。',
+    '只依据实验上下文和用户问题回答；上下文中的 null 或缺失值不得臆造。',
+    '先给出可执行的结论，再解释公式、单位和计算依据；所有数值都要标明单位。',
+    '区分测量事实、数值模拟结果和物理推断；发现数据不足或不一致时明确指出。',
+    '小角度近似应检查摆角是否足够小（通常约 10° 以内）；大角度时说明简谐周期公式的局限。',
+    '区分阻尼导致的能量耗散与受迫振动导致的外部做功，不要把能量变化直接判定为数值误差。',
+    '涉及实验报告时按“结论”“依据与计算”“误差与改进”三段回答；普通提问保持简洁。',
+    '使用中文纯文本，不使用 Markdown 表格、代码围栏或无关长篇背景。',
+  ].join('\n');
+  const priorHistory = conversationHistory.slice(0, -1).map((msg) => ({ role: msg.role, content: msg.content }));
+  return [
+    { role: 'system', content: systemPrompt },
+    ...priorHistory,
+    {
+      role: 'user',
+      content: `实验上下文（JSON）：\n${JSON.stringify(contextData, null, 2)}\n\n当前问题：${question}\n\n请先引用上下文中的关键事实，再给出物理解释或操作建议。`,
+    },
+  ];
 }
 
 type ChatCompletionChunk = {
   id?: string;
+  error?: { message?: string };
   choices?: Array<{ delta?: { content?: string }; finish_reason?: string | null }>;
 };
+
+async function readAiErrorMessage(response: Response) {
+  let body = '';
+  try {
+    body = await response.text();
+  } catch {
+    return '';
+  }
+  for (const line of body.split(/\r?\n/)) {
+    if (!line.startsWith('data:')) continue;
+    const dataText = line.slice(5).trim();
+    if (!dataText || dataText === '[DONE]') continue;
+    try {
+      const parsed = JSON.parse(dataText) as { error?: { message?: string }; message?: string };
+      const message = parsed.error?.message || parsed.message;
+      if (typeof message === 'string' && message.trim()) return message.trim();
+    } catch {
+      continue;
+    }
+  }
+  return '';
+}
 
 let aiAbortController: AbortController | null = null;
 let aiStreaming = false;
@@ -2782,32 +3177,44 @@ let aiActiveAssistantIndex = -1;
 let aiActiveUserText = '';
 let aiActiveAssistantText = '';
 
+async function ensureAiService() {
+  try {
+    const response = await fetchAiHealth();
+    if (!response.ok) throw new Error('AI 服务未启动');
+    const health = await response.json() as { configured?: boolean; records?: boolean };
+    if (health.records !== true) throw new Error('PHP AI 服务版本较旧，请重新部署 api 目录。');
+    if (health.configured === false) throw new Error('服务端未配置 AI 密钥，请检查环境变量。');
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'AI 服务未启动';
+    appendAiMessage('assistant', '系统', message);
+    setAiStatus('AI 服务不可用');
+    return false;
+  }
+}
+
 async function callScnetChatStream(question: string, onDelta: (chunk: string) => void) {
-  const { apiKey, model } = getAiConfig();
-  if (!apiKey) {
+  const { endpoint } = getAiConfig();
+  if (getAiConfig().endpoint === '') {
     throw new Error('密钥不可用，请检查是否已正确配置 AI 服务密钥。');
   }
   aiAbortController = new AbortController();
   aiStreaming = true;
   aiStopBtn.disabled = false;
   aiStopBtn.textContent = '停止生成';
-  const response = await fetch('https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', {
+  const response = await fetch(endpoint, {
     method: 'POST',
     signal: aiAbortController.signal,
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model,
-      messages: buildAiMessages(question),
-      stream: true,
-      stream_options: { include_usage: true },
-      temperature: 0.6,
-      top_p: 0.8,
+        messages: buildPhysicsAiMessages(question),
     }),
   });
   if (!response.ok || !response.body) {
+    const serverMessage = await readAiErrorMessage(response);
+    if (serverMessage) throw new Error(serverMessage);
     if (response.status === 401) throw new Error('密钥不可用，请检查是否已正确配置 AI 服务密钥。');
     if (response.status === 403) throw new Error('当前账号没有权限使用该模型，请确认模型权限或额度。');
     if (response.status === 429) throw new Error('请求太频繁了，请稍后再试。');
@@ -2835,6 +3242,9 @@ async function callScnetChatStream(question: string, onDelta: (chunk: string) =>
       } catch {
         continue;
       }
+      if (typeof parsed?.error?.message === 'string' && parsed.error.message.trim()) {
+        throw new Error(parsed.error.message.trim());
+      }
       if (typeof parsed?.id === 'string') responseId = parsed.id;
       const delta = parsed?.choices?.[0]?.delta?.content;
       if (typeof delta === 'string' && delta) {
@@ -2843,6 +3253,27 @@ async function callScnetChatStream(question: string, onDelta: (chunk: string) =>
       }
     }
   }
+  buffer += decoder.decode();
+  if (buffer.startsWith('data:')) {
+    const dataText = buffer.slice(5).trim();
+    if (dataText && dataText !== '[DONE]') {
+      try {
+        const parsed = JSON.parse(dataText) as ChatCompletionChunk;
+        if (typeof parsed?.error?.message === 'string' && parsed.error.message.trim()) {
+          throw new Error(parsed.error.message.trim());
+        }
+        if (typeof parsed?.id === 'string') responseId = parsed.id;
+        const delta = parsed?.choices?.[0]?.delta?.content;
+        if (typeof delta === 'string' && delta) {
+          fullText += delta;
+          onDelta(fullText);
+        }
+      } catch (error) {
+        if (error instanceof Error && error.message !== 'Unexpected end of JSON input') throw error;
+      }
+    }
+  }
+  if (!fullText) throw new Error('AI 返回了空响应，请稍后重试。');
   if (responseId) localStorage.setItem('scnet-ai-previous-response-id', responseId);
   aiStreaming = false;
   aiAbortController = null;
@@ -2920,16 +3351,27 @@ function exportRecordsToCsv() {
 function resetExperiment() {
   engine.reset(params.theta0, 0);
   simTime = 0;
+  simulationAccumulator = 0;
+  displayAccumulator = 0;
+  resetEnergyTracking();
   stateTrail.length = 0;
+  trailGeometry.setDrawRange(0, 0);
   phaseTrail.length = 0;
   energySamples.length = 0;
   experimentRecords.length = 0;
+  recordId = 1;
   recording = false;
   recordCycle = 0;
   recordBtn.textContent = '开始记录';
   recordBtn.style.background = '';
   resetStopwatch();
   renderRecords();
+  scheduleExperimentRecordsSave();
+  updateEnergyReadout(params.theta0, 0);
+  if (sceneVisualEnabled) {
+    updateScene();
+    render();
+  }
 }
 
 function fillStopwatchToLabInput() {
@@ -3300,7 +3742,7 @@ function syncLabPreview() {
   const totalTime = Number(totalTimeInput.value);
   const l = getLabLengthMeters();
   pendulumLengthReadout.textContent = `${(l * 100).toFixed(2)} cm`;
-  const n = Math.max(1, Number(cycleCountInput.value));
+  const n = Math.max(1, Number(cycleCountInput.value) || 1);
   if (Number.isFinite(totalTime) && totalTime > 0) {
     const T = totalTime / n;
     periodInput.textContent = T.toFixed(4);
@@ -3318,57 +3760,89 @@ function syncLabPreview() {
 }
 
 function loop(now: number) {
-  const dt = Math.min((now - last) / 1000, 0.033);
-  last = now;
-  syncParams();
-  if (running && !isDraggingBob) {
-    engine.step(dt, params);
-    simTime += dt;
+  if (document.hidden) {
+    last = now;
+    requestAnimationFrame(loop);
+    return;
   }
+  const dt = Math.min((now - last) / 1000, 0.05);
+  last = now;
+  if (paramsDirty) syncParams();
+  let stepped = false;
+  if (running && !isDraggingBob) {
+    simulationAccumulator = Math.min(simulationAccumulator + dt, FIXED_STEP * MAX_SUBSTEPS_PER_FRAME);
+    let steps = 0;
+    while (simulationAccumulator >= FIXED_STEP && steps < MAX_SUBSTEPS_PER_FRAME) {
+      const steppedState = engine.step(FIXED_STEP, params);
+      simulationAccumulator -= FIXED_STEP;
+      simTime += FIXED_STEP;
+      steps += 1;
+      stepped = true;
+      handleStopwatch(steppedState.theta, steppedState.omega);
+    }
+  }
+  if (!stepped) handleStopwatch(engine.getState().theta, engine.getState().omega);
+  displayAccumulator += dt;
+  const targetDisplayStep = running || isDraggingBob ? DISPLAY_STEP : IDLE_RENDER_STEP;
+  if (displayAccumulator < targetDisplayStep) {
+    requestAnimationFrame(loop);
+    return;
+  }
+  displayAccumulator %= targetDisplayStep;
   const { theta, omega } = engine.getState();
-  phaseTrail.push({ theta, omega });
-  if (phaseTrail.length > 260) phaseTrail.shift();
-  pushEnergySample(theta, omega);
+  if (stepped || phaseTrail.length === 0) {
+    phaseTrail.push({ theta, omega });
+    if (phaseTrail.length > 260) phaseTrail.shift();
+    pushEnergySample(theta, omega);
+  }
   updateEnergyReadout(theta, omega);
-  handleStopwatch(theta, omega);
+  updateStopwatchDisplay();
   if (stopwatchRunning) {
     stopwatchElapsed = now - stopwatchStart;
   }
   if (recording) {
     recordCycle = swingCount;
   }
-  updateStopwatchDisplay();
-  if (sceneVisualEnabled) {
+  if (sceneVisualEnabled && (stepped || isDraggingBob || sceneNeedsRender)) {
     updateScene();
-  } else {
-    render();
   }
-  if (energyVisualEnabled) {
+  if (energyVisualEnabled && activeAnalysisPanel === 'energy') {
     drawEnergyChart();
-  } else {
+  } else if (!energyVisualEnabled) {
     clearCanvas(energyCanvas.getContext('2d')!);
   }
-  if (phaseVisualEnabled) {
+  if (phaseVisualEnabled && activeAnalysisPanel === 'phase') {
     drawPhaseChart();
-  } else {
+  } else if (!phaseVisualEnabled) {
     clearCanvas(phaseCanvas.getContext('2d')!);
   }
-  renderRecords();
-  render();
+  if (renderedRecordCount !== experimentRecords.length) renderRecords();
+  if (sceneVisualEnabled) render();
   requestAnimationFrame(loop);
 }
 
-function bindRangePair(rangeInput: HTMLInputElement, numberInput: HTMLInputElement, normalize: (value: number) => number) {
+function bindRangePair(
+  rangeInput: HTMLInputElement,
+  numberInput: HTMLInputElement,
+  normalizeRange: (value: number) => number,
+  normalizeNumber: (value: number) => number = normalizeRange,
+  formatNumber: (rangeValue: number) => string = (value) => value.toFixed(numberInput === gravityNumberInput ? 1 : 2),
+) {
   const syncFromRange = () => {
-    const value = normalize(Number(rangeInput.value));
+    const value = normalizeRange(Number(rangeInput.value));
     rangeInput.value = String(value);
-    numberInput.value = value.toFixed(numberInput === gravityNumberInput ? 1 : numberInput === theta0NumberInput ? 0 : 2);
+    numberInput.value = formatNumber(value);
     syncParams();
   };
   const syncFromNumber = () => {
-    const value = normalize(Number(numberInput.value));
+    const parsedValue = Number(numberInput.value);
+    if (!Number.isFinite(parsedValue)) {
+      numberInput.value = formatNumber(Number(rangeInput.value));
+      return;
+    }
+    const value = normalizeNumber(parsedValue);
     rangeInput.value = String(value);
-    numberInput.value = value.toFixed(numberInput === gravityNumberInput ? 1 : numberInput === theta0NumberInput ? 0 : 2);
+    numberInput.value = formatNumber(value);
     syncParams();
   };
   rangeInput.addEventListener('input', syncFromRange);
@@ -3378,22 +3852,23 @@ function bindRangePair(rangeInput: HTMLInputElement, numberInput: HTMLInputEleme
 bindRangePair(lengthInput, lengthNumberInput, (value) => Math.min(3.5, Math.max(0.5, value)));
 bindRangePair(gravityInput, gravityNumberInput, (value) => Math.min(20, Math.max(0, value)));
 bindRangePair(dampingInput, dampingNumberInput, (value) => Math.min(2, Math.max(0, value)));
-bindRangePair(theta0Input, theta0NumberInput, (value) => Math.min(1.57, Math.max(0, value * Math.PI / 180)));
+bindRangePair(
+  theta0Input,
+  theta0NumberInput,
+  (value) => Math.min(1.57, Math.max(0, value)),
+  (value) => Math.min(1.57, Math.max(0, value * Math.PI / 180)),
+  (value) => `${Math.round((value * 180) / Math.PI)}`,
+);
 ballDiameterInput.addEventListener('input', syncLabPreview);
 stringLengthInput.addEventListener('input', syncLabPreview);
 cycleCountInput.addEventListener('input', syncLabPreview);
 totalTimeInput.addEventListener('input', syncLabPreview);
 document.addEventListener('pointermove', (event) => {
-  lastPointerX = event.clientX;
-  lastPointerY = event.clientY;
-  updateLightTheme(event.clientX, event.clientY);
-  updateCardGlow(event);
-});
-sceneCanvas.addEventListener('pointermove', (event) => {
-  updateSceneGlow(event);
+  queuePointerVisualUpdate(event);
 });
 sceneCanvas.addEventListener('pointerdown', (event) => {
   updateScenePointer(event);
+  updateSceneGlow(event);
   const rect = sceneCanvas.getBoundingClientRect();
   const ndcX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   const ndcY = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
@@ -3415,7 +3890,7 @@ sceneCanvas.addEventListener('pointermove', (event) => {
   const current = engine.getState();
   engine.reset(theta, current.omega * 0.92);
   simTime = 0;
-  updateSceneGlow(event);
+  resetEnergyTracking();
 });
 sceneCanvas.addEventListener('pointerup', (event) => {
   if (isDraggingBob) {
@@ -3429,6 +3904,9 @@ sceneCanvas.addEventListener('pointercancel', () => {
 toggleBtn.addEventListener('click', () => {
   running = !running;
   toggleBtn.textContent = running ? '暂停' : '继续';
+  toggleBtn.setAttribute('aria-pressed', String(running));
+  toggleBtn.setAttribute('aria-label', running ? '暂停仿真' : '继续仿真');
+  toggleBtn.title = running ? '暂停仿真（空格键）' : '继续仿真（空格键）';
 });
 recordBtn.addEventListener('click', () => {
   if (!recording) {
@@ -3446,7 +3924,10 @@ recordBtn.addEventListener('click', () => {
 });
 clearRecordBtn.addEventListener('click', () => {
   experimentRecords.length = 0;
+  recordId = 1;
+  recordCycle = 0;
   renderRecords();
+  void clearSavedExperimentRecords();
 });
 exportCsvBtn.addEventListener('click', exportRecordsToCsv);
 exportPdfBtn.addEventListener('click', openEditableReportOverlay);
@@ -3456,18 +3937,14 @@ renderAiMessages();
 async function sendAiQuestion() {
   const text = aiInput.value.trim();
   if (!text || aiStreaming) return;
-  if (!getAiConfig().apiKey) {
-    appendAiMessage('assistant', '系统', '未检测到 VITE_DASHSCOPE_API_KEY，请先在环境变量中配置 API Key。');
-    setAiStatus('缺少 API Key');
-    return;
-  }
+  if (!await ensureAiService()) return;
   saveAiConfig();
   appendAiMessage('user', '你', text);
-  const assistantIndex = aiMessages.length;
-  aiActiveAssistantIndex = assistantIndex;
   aiActiveUserText = text;
   aiActiveAssistantText = '';
-  appendAiMessage('assistant', '模型', '');
+  appendAiMessage('assistant', '模型', '正在连接 AI 服务…');
+  const assistantIndex = aiMessages.length - 1;
+  aiActiveAssistantIndex = assistantIndex;
   conversationHistory.push({ role: 'user', content: text });
   if (conversationHistory.length > 12) conversationHistory.splice(0, conversationHistory.length - 12);
   aiInput.value = '';
@@ -3535,6 +4012,13 @@ calculateGBtn.addEventListener('click', () => {
   const totalTime = Number(totalTimeInput.value);
   if (Number.isFinite(totalTime) && totalTime > 0) {
     updateGravityResult(totalTime);
+    calculateGBtn.textContent = '已计算';
+    window.setTimeout(() => { calculateGBtn.textContent = '计算重力加速度'; }, 1200);
+  } else {
+    totalTimeInput.focus();
+    totalTimeInput.setCustomValidity('请输入大于 0 的总时间');
+    totalTimeInput.reportValidity();
+    totalTimeInput.addEventListener('input', () => totalTimeInput.setCustomValidity(''), { once: true });
   }
 });
 analysisTabs.addEventListener('click', (event) => {
@@ -3591,13 +4075,26 @@ stopwatchBtn.addEventListener('click', () => {
 });
 stopwatchResetBtn.addEventListener('click', resetStopwatch);
 resetBtn.addEventListener('click', resetExperiment);
+document.addEventListener('keydown', (event) => {
+  const target = event.target as HTMLElement | null;
+  if (target?.matches('input, textarea, select, [contenteditable="true"]')) return;
+  if (event.key === ' ') {
+    event.preventDefault();
+    toggleBtn.click();
+  } else if (event.key.toLowerCase() === 'r') {
+    resetBtn.click();
+  }
+});
 
 updateLightTheme(window.innerWidth * 0.5, window.innerHeight * 0.2);
 updateLabels();
 syncLabPreview();
+resetEnergyTracking();
 updateEnergyReadout(engine.getState().theta, engine.getState().omega);
 updateStopwatchDisplay();
 renderRecords();
+void loadExperimentRecords();
+window.setInterval(() => { void refreshExperimentRecords(); }, 60_000);
 seedAiConversation();
 setAiConfigStatus();
 switchAnalysisPanel('record');

@@ -1,8 +1,3 @@
-# Nonlinear-damped-pendulum-experimental-platform-neo
-A WebGL virtual simulation experiment project based on Vite, TypeScript, and Three.js, used to demonstrate the motion of a simple pendulum under different damping conditions. It integrates real-time data observation, energy analysis, phase diagram analysis, gravitational acceleration measurement, record export, and an AI assistant.
-
-README: https://www.urltime.cn/app/readme_physics.html
-
 # 非线性阻尼单摆实验平台
 
 一个基于 **Vite + TypeScript + Three.js** 的 WebGL 虚拟仿真实验项目。它用于演示单摆在不同阻尼条件下的运动规律，并集成了实时数据观测、能量分析、相图分析、重力加速度测定、实验记录导出和 AI 实验助手。
@@ -49,6 +44,8 @@ README: https://www.urltime.cn/app/readme_physics.html
 ### 4. 实验记录与导出
 
 - 支持记录实验过程数据。
+- 实验记录仅保存在服务端内存中，按访问 IP 隔离；页面刷新后会恢复本 IP 在一小时有效期内的记录，其他访问者无法读取。
+- 服务端会在最后一次记录更新一小时后自动清理；服务重启也会清除未导出的记录。
 - 可导出 CSV 方便二次处理。
 - 可生成实验报告页面，便于整理提交。
 
@@ -85,7 +82,9 @@ npm install
 npm run dev
 ```
 
-启动后，Vite 会在终端输出本地访问地址，默认通常是 `http://localhost:5173`。
+该命令会同时启动 Vite 前端和 Node AI 服务。Vite 会在终端输出本地访问地址，默认通常是 `http://localhost:5173`；若端口已被占用，会自动使用下一个端口。
+
+如需分别启动服务，可在两个终端运行 `npm run start` 和 `npm run dev:client`。
 
 ### 生成生产构建
 
@@ -101,15 +100,26 @@ npm run build
 npm run preview
 ```
 
+### VS Code 调试
+
+项目已提供 `.vscode/launch.json` 和 `.vscode/tasks.json`：
+
+- `调试完整实验平台`：同时启动 Node AI 服务和 Vite 前端，并在 Chrome 中打开调试页面。
+- `调试 Node AI 服务`：断点调试 `server/index.mjs`。
+- `运行物理回归测试`：调试 `tests/pendulum-energy-drift.mjs`。
+- 任务面板中的 `构建生产版本` 和 `运行物理回归测试` 可直接执行对应脚本。
+
+首次调试前请复制 `.env.example` 为 `.env.local` 并填写本地服务密钥。
+
 ## 环境变量
 
-AI 对话助手需要配置兼容 DashScope 的 API Key。你可以在项目根目录创建 `.env` 或 `.env.local`：
+AI 对话助手通过同源 PHP 接口 `/api/chat.php` 调用中转服务。生产环境无需运行 Node；请在 PHP 网站根目录（与 `api/` 同级）创建 `.env`，不要使用 `VITE_*` 变量，以免密钥被打包进浏览器：
 
-```bash
-VITE_DASHSCOPE_API_KEY=你的APIKey
-```
+AI 服务通过 URL Time API 提供 OpenAI 兼容接口。PHP 后端默认采用 `deepseek-v4.1-flash`，并通过 `https://api.urltime.cn` 调用；如果配置多个中转站或模型，则会在候选之间轮询，失败或超时时自动切换。也可以通过 `URLTIME_MODELS` 配置自定义模型。`AI_ROUTE_TIMEOUT` 是单节点等待秒数，`AI_TOTAL_TIMEOUT` 是一次请求的总时限。运行 `npm run build` 后，`dist/` 已包含 `api/`；将 `dist` 内容上传到 1Panel PHP 网站根目录，并在根目录放置未提交的 `.env`。PHP 需要启用 OpenSSL、`allow_url_fopen` 和写入 `api/data/` 的权限。首页底部展示 ICP 备案号和公安备案号，并链接至官方查询平台。
 
 请勿将真实密钥提交到公共仓库。建议将 `.env.local` 加入忽略列表，仅保留示例配置。
+
+`TRUST_PROXY=1` 仅用于 1Panel/OpenResty 等本机反向代理部署，让 PHP 服务使用代理传来的真实客户端 IP 隔离实验记录；本地直接运行时可以不配置。请勿将 PHP 文件部署在不受信任的反向代理之后，否则客户端可能伪造代理头。
 
 ## 项目结构
 
@@ -117,6 +127,7 @@ VITE_DASHSCOPE_API_KEY=你的APIKey
 - `index.html`：Vite 项目入口页面。
 - `package.json`：脚本、依赖与项目基础信息。
 - `dist/`：构建后输出目录。
+- `.vscode/launch.json`、`.vscode/tasks.json`：前后端调试和物理回归测试配置。
 
 ## 使用指南
 
@@ -154,3 +165,20 @@ VITE_DASHSCOPE_API_KEY=你的APIKey
 ## 许可证与贡献
 
 欢迎继续完善该实验平台，包括更多物理实验、数据分析工具和可视化效果。你可以通过提交 issue 或 PR 的方式参与改进。
+## 自定义中转站与模型
+
+PHP 服务支持通过 `.env` 或 1Panel PHP 环境变量自定义 OpenAI 兼容中转站和模型。多个值使用英文逗号或换行分隔，服务会按组合轮询，并在请求失败或超时时自动切换。
+
+```env
+URLTIME_API_KEY=你的API密钥
+URLTIME_BASE_URLS=https://relay-a.example.com/v1,https://relay-b.example.com
+URLTIME_MODELS=your-model-a,your-model-b
+```
+
+`URLTIME_BASE_URLS` 可填写带或不带 `/v1` 的地址；服务会自动补齐 `/v1/chat/completions`。如果留空，则使用内置中转站 `https://api.urltime.cn` 和默认模型 `deepseek-v4.1-flash`。修改环境变量后无需重启 PHP-FPM，下一次请求会读取新配置。
+
+当前默认使用 `api.urltime.cn`。每次请求从下一个候选开始，并在连接失败、HTTP 错误或超时时自动尝试后续节点或模型。
+
+## 数值积分与刷新机制
+
+物理引擎使用带阻尼分裂的 Velocity Verlet 积分器。仿真采用 `10μs` 固定步长，并通过累积器与每帧最大步数限制避免浏览器帧率波动影响积分结果；无阻尼模式下可保持长期能量稳定。能量图、相图和实时数据统一按 `60Hz` 显示采样，不再以约 `15Hz` 的定时器刷新。可运行 `npm run test:physics` 验证 10 秒保守系统的长期能量漂移。
