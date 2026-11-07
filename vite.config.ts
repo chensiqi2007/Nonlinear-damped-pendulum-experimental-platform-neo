@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite';
 import { viteSingleFile } from 'vite-plugin-singlefile';
 
+const aiProxyPort = Number(process.env.AI_PROXY_PORT || 8080);
+
 export default defineConfig({
   base: './',
   plugins: [viteSingleFile()],
@@ -12,8 +14,10 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:8080',
+        target: `http://localhost:${aiProxyPort}`,
         changeOrigin: true,
+        timeout: 120000,
+        proxyTimeout: 120000,
       },
     },
   },

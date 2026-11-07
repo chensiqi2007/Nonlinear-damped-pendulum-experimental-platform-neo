@@ -1,0 +1,42 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "调试 Node AI 服务",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/server/index.mjs",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PORT": "8080"
+      },
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "name": "调试前端（Vite）",
+      "type": "firefox",
+      "request": "launch",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}",
+      "preLaunchTask": "启动 Vite 开发服务器"
+    },
+    {
+      "name": "运行物理回归测试",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/tests/pendulum-energy-drift.mjs",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    }
+  ],
+  "compounds": [
+    {
+      "name": "调试完整实验平台",
+      "configurations": ["调试 Node AI 服务", "调试前端（Vite）"],
+      "stopAll": true
+    }
+  ]
+}

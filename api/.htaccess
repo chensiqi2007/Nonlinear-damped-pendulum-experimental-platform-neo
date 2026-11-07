@@ -1,0 +1,11 @@
+Options -Indexes
+
+RewriteEngine On
+RewriteRule ^chat$ chat.php [L]
+RewriteRule ^health$ health.php [L]
+RewriteRule ^records$ records.php [L]
+
+<FilesMatch "^(\.env|_ai_common\.php|ai-round-robin\.txt)$">
+  Order allow,deny
+  Deny from all
+</FilesMatch>

@@ -1,14 +1,19 @@
-# Local IDE and preview state
-.cursor/
-.idea/
-.vscode/
-.preview/
-
 # Dependencies and build output
 node_modules/
 dist/
 .vite/
-tsconfig.tsbuildinfo
+coverage/
+.nyc_output/
+*.tsbuildinfo
+
+# Local IDE, editor and preview state
+.cursor/
+.idea/
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
+.preview/
+.codex-finalizer/
 
 # Local secrets and environment overrides
 .env
@@ -21,31 +26,69 @@ tsconfig.tsbuildinfo
 api/ai-round-robin.txt
 server/ai-round-robin.txt
 
-# Logs, coverage and operating-system files
+# Logs and operating-system files
 *.log
+.eslintcache
+.stylelintcache
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-coverage/
-.nyc_output/
 .DS_Store
 Thumbs.db
 Desktop.ini
 
-# Research, generated and locally supplied documents
+# Temporary working files
+.tmp-*
+
+# Generated documents, reports and media
+*.doc
+*.docx
+*.pdf
+*.ppt
+*.pptx
+*.xls
+*.xlsx
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+~$*
 copyright/
 paper_check/
 paper_figures/
+ppt_build/
+ppt_output/
+render_final/
+大赛文档模板/
+全国物理实验/
+
+# Generated text and result files
 paper_text.txt
-*.docx
-*.doc
-~$*
-fig_*.png
+paper_text_final.txt
 forced_results.json
 
-# Local-only document generation helpers
+# Runtime and local data
+api/data/*
+!api/data/.gitkeep
+
+# Document-generation scripts
+emp_edit_doc.py
+fix_names.py
+generate_copyright_materials.py
+make_contact.py
+verify_doc.py
 gen_*.py
-generate_*.py
 render_pdf.py
 extract_text.py
+scripts/check_breaks.py
+scripts/check_cover.py
+scripts/check_styles.py
+scripts/docx2pdf.ps1
+scripts/docx_dump_all.py
+scripts/docx_dump_body.py
+scripts/docx_inspect.py
+scripts/fill_spec.py
+scripts/patch_cover.py
+

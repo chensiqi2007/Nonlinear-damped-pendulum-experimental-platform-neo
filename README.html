@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="非线性阻尼单摆数字孪生实验平台使用说明、更新日志、AI 声明、版权声明与中国大陆合规部署说明。">
+  <title>非线性阻尼单摆实验平台 · README</title>
+  <style>
+    :root{color-scheme:dark;--bg:#08111e;--panel:#101d31;--panel2:#14263f;--text:#edf4ff;--muted:#aabbd3;--line:#2a4261;--cyan:#70e6d5;--blue:#91b8ff;--warn:#ffd37e;--danger:#ff9d9d}
+    *{box-sizing:border-box}html{scroll-behavior:smooth;background:var(--bg)}body{margin:0;color:var(--text);background:radial-gradient(circle at 12% 0,#183b5b 0,transparent 34%),linear-gradient(180deg,#08111e,#060b14);font:16px/1.8 "Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+    a{color:var(--cyan)}.wrap{width:min(1120px,calc(100% - 32px));margin:auto;padding:30px 0 72px}.hero,.section{border:1px solid var(--line);border-radius:20px;background:rgba(16,29,49,.94);box-shadow:0 18px 60px rgba(0,0,0,.22)}.hero{padding:clamp(24px,5vw,54px)}
+    .eyebrow{color:var(--cyan);font-size:13px;letter-spacing:.12em;text-transform:uppercase}.hero h1{margin:14px 0 12px;font-size:clamp(32px,6vw,58px);line-height:1.12;letter-spacing:-.03em}.lead{max-width:860px;margin:0;color:var(--muted);font-size:18px}.badges,.toc{display:flex;flex-wrap:wrap;gap:10px;margin-top:24px}.badge,.toc a{padding:7px 13px;border:1px solid var(--line);border-radius:999px;background:var(--panel2);text-decoration:none}.section{margin-top:18px;padding:clamp(20px,3vw,30px)}.section h2{margin:0 0 16px;font-size:27px}.section h3{margin:22px 0 8px;color:#dce9ff;font-size:19px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.card{padding:18px;border:1px solid var(--line);border-radius:15px;background:rgba(20,38,63,.72)}.card strong{display:block;margin-bottom:5px;color:var(--blue)}ul,ol{padding-left:24px;margin:8px 0 0}li+li{margin-top:7px}code{padding:2px 6px;border:1px solid #25415f;border-radius:6px;background:#091525;color:#e0ebff}pre{overflow:auto;margin:12px 0 0;padding:16px;border:1px solid #25415f;border-radius:12px;background:#07111e}pre code{padding:0;border:0;background:none}.callout{margin-top:16px;padding:15px 17px;border-left:4px solid var(--cyan);border-radius:10px;background:rgba(112,230,213,.08)}.warning{border-left-color:var(--warn);background:rgba(255,211,126,.09)}.danger{border-left-color:var(--danger);background:rgba(255,157,157,.08)}table{width:100%;border-collapse:collapse}th,td{padding:11px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}th{color:var(--blue)}.muted,footer{color:var(--muted)}footer{margin-top:22px;text-align:center;font-size:14px}@media(max-width:760px){.grid{grid-template-columns:1fr}.wrap{width:min(100% - 20px,1120px);padding-top:10px}.section{padding:20px}}
+  </style>
+</head>
+<body>
+<main class="wrap">
+  <header class="hero">
+    <div class="eyebrow">README · Physical Experiment Platform</div>
+    <h1>非线性阻尼单摆<br>数字孪生实验平台</h1>
+    <p class="lead">面向课堂演示、物理实验教学和自主探究的 WebGL 实验平台。平台用 Three.js 呈现三维单摆，用带阻尼分裂的 Velocity Verlet 积分器计算运动，并提供实时参数、能量分析、相图、实验记录、报告导出和物理指导 AI。</p>
+    <div class="badges"><span class="badge">v2.0.1</span><span class="badge">TypeScript</span><span class="badge">Three.js / WebGL</span><span class="badge">Velocity Verlet</span><span class="badge">PHP 8.3 / 1Panel</span></div>
+  </header>
+
+  <section class="section" id="toc"><h2>目录</h2><nav class="toc"><a href="#changelog">更新日志</a><a href="#features">功能</a><a href="#physics">物理模型</a><a href="#ai">AI 服务</a><a href="#deploy">部署</a><a href="#data">数据与隐私</a><a href="#ai-notice">AI 声明</a><a href="#copyright">版权与服务</a><a href="#compliance">中国大陆合规</a><a href="#limits">已知边界</a></nav></section>
+
+  <section class="section" id="changelog">
+    <h2>更新日志</h2>
+    <div class="card"><strong>v2.0.1 · 当前版本 · 相较 v2.0.0</strong><ul>
+      <li>生产后端从 Node 代理扩展为 PHP 8.3/Kangle 方案，前端使用同源 <code>/api/chat.php</code>、<code>/api/health.php</code> 和 <code>/api/records.php</code>。</li>
+      <li>默认接入 URL Time API <code>https://api.urltime.cn</code>，模型标识为 <code>deepseek-v4.1-flash</code>；可配置多个节点，失败或超时自动切换。</li>
+      <li>AI 接口改为 SSE 流式转发，单节点和整次请求均有超时保护，避免页面无限停留在“正在连接”。</li>
+      <li>支持通过 <code>.env</code> 或 1Panel 环境变量自定义中转站、模型和超时时间；密钥只在服务端读取。</li>
+      <li>实验数据按客户端 IP 的哈希值隔离保存，最后一次更新后一小时自动过期，并禁止直接访问 JSON 数据文件。</li>
+      <li>物理引擎使用带阻尼分裂的 Velocity Verlet，仿真固定步长为 <code>10μs</code>；图表与数据面板采用浏览器可用帧率下的 60Hz 采样刷新。</li>
+      <li>新增能量漂移回归测试、PHP 部署文档、构建时自动复制 <code>api/</code> 目录和站点访问保护规则。</li>
+    </ul></div>
+    <div class="callout">版本维护规则：每次发布新版本时，在本节顶部新增版本条目，明确列出相较上一发布版本的新增功能、性能改进、问题修复、兼容性变化和文档变化；历史版本条目不覆盖。</div>
+  </section>
+
+  <section class="section" id="features"><h2>功能概览</h2><div class="grid">
+    <div class="card"><strong>三维可视化</strong>使用 Three.js 渲染摆杆、摆球、灯光、运动轨迹和交互场景。</div>
+    <div class="card"><strong>多种实验模式</strong>支持小角度、大角度、受迫、阻尼、混沌和自定义参数实验。</div>
+    <div class="card"><strong>实时分析</strong>查看角度、角速度、动能、势能、机械能和相图变化。</div>
+    <div class="card"><strong>实验记录</strong>按周期记录数据，支持 CSV 导出和可编辑实验报告页面。</div>
+    <div class="card"><strong>重力测量</strong>根据摆长、周期数和总时间估算重力加速度并显示误差。</div>
+    <div class="card"><strong>物理指导 AI</strong>结合当前参数、能量、积分器和最近记录回答实验分析问题。</div>
+  </div></section>
+
+  <section class="section" id="physics"><h2>物理模型与数值边界</h2>
+    <p>系统模拟带阻尼、外部驱动的非线性单摆。无阻尼时，积分器采用 Velocity Verlet；阻尼项通过分裂更新加入，兼顾固定步长计算和长时间稳定性。</p>
+    <pre><code>θ'' = −(g / L) sin(θ) − bθ' + F(t)</code></pre>
+    <ul><li>固定仿真步长为 <code>10μs</code>，浏览器帧率只影响可视化呈现，不直接决定积分步长。</li><li>图表刷新是 60Hz 采样显示，不等同于物理计算或跨设备的微秒级同步。</li><li>Velocity Verlet 属于适合保守系统的辛结构方法；加入阻尼或外部驱动后，系统本身不再是严格保守系统。</li><li>能量漂移测试用于回归验证，不构成真实实验仪器精度或长期物理定律证明。</li><li>小角度近似仅适用于较小摆角；大角度、强阻尼和混沌模式应结合完整方程解释。</li></ul>
+  </section>
+
+  <section class="section" id="ai"><h2>AI 服务配置</h2>
+    <p>生产环境使用 PHP SSE 接口，前端不会直接向 URL Time API 发送密钥。当前默认模型为 <code>deepseek-v4.1-flash</code>，默认接口地址如下：</p>
+    <p><code>api.urltime.cn</code></p>
+    <pre><code>URLTIME_API_KEY=你的服务密钥
+URLTIME_BASE_URLS=https://api.urltime.cn
+URLTIME_MODELS=deepseek-v4.1-flash
+AI_ROUTE_TIMEOUT=12
+AI_TOTAL_TIMEOUT=60
+TRUST_PROXY=1</code></pre>
+    <p class="muted">中转地址可以带或不带 <code>/v1</code>，接口会自动拼接 <code>/v1/chat/completions</code>。多个地址使用英文逗号或换行分隔。</p>
+  </section>
+
+  <section class="section" id="deploy"><h2>1Panel PHP 8.3 部署</h2>
+    <ol><li>执行 <code>npm run build</code>，将生成的 <code>dist/</code> 内容上传到网站根目录。</li><li>网站根目录应包含 <code>index.html</code> 和 <code>api/</code>，不要再嵌套一层 <code>dist/</code>。</li><li>在站点目录或其上级目录创建未提交的 <code>.env</code>；当前 PHP 接口会读取这两个位置。</li><li>PHP 运行环境选择 8.3 或更高版本，PHP-FPM 端口使用 1Panel 默认的 <code>9000</code> 即可，不需要对公网开放。</li><li>启用 <code>openssl</code>，确认 <code>allow_url_fopen=On</code>、<code>output_buffering=Off</code>、<code>zlib.output_compression=Off</code>。</li><li>确保 <code>api/data/records/</code> 可写；访问 <code>/api/health.php</code> 应返回 <code>configured:true</code>、<code>providers:1</code>、<code>models:1</code>（使用自定义模型时按实际配置变化）。</li></ol>
+    <div class="callout warning">生产环境不需要运行 Node。Node 仅用于本地开发和兼容测试；1Panel PHP 站点直接提供静态页面与 PHP API。首页底部已展示 ICP 备案号与公安备案号，并链接至官方查询平台。</div>
+  </section>
+
+  <section class="section" id="data"><h2>数据、隐私与安全</h2><ul><li>实验记录不会按明文 IP 保存，而是使用服务端盐值计算哈希后作为文件名。</li><li>记录默认在最后一次更新后一小时过期；清空记录按钮会删除当前客户端对应数据。</li><li>API Key 只能配置在 PHP 环境变量或站点目录外的 <code>.env</code> 中，禁止写入 <code>VITE_*</code>、前端源码或公开仓库。</li><li>生产站点必须启用 HTTPS，并限制 <code>api/</code>、<code>.env</code>、轮询状态文件和记录 JSON 的直接访问。</li><li><code>TRUST_PROXY=1</code> 只应在反向代理可信且会清理伪造请求头时使用。</li></ul></section>
+
+  <section class="section" id="ai-notice"><h2>AI 生成内容声明</h2><div class="callout warning"><p>本平台的 AI 助手生成内容属于实验辅助信息，不是经过教师、实验室或专业机构审核的结论。AI 可能产生事实错误、计算错误、过度概括或不适用于当前实验条件的建议。</p><ul><li>使用者应以实验原始数据、教材、教师指导和可复核计算为准。</li><li>AI 不替代安全培训、实验操作规程、学术指导、医疗建议、法律意见或工程签字。</li><li>提交报告前应人工核对公式、单位、有效数字、误差来源、图表和引用。</li><li>不要在对话中提交身份证号、联系方式、账号密码、API Key、未公开研究数据或其他敏感信息。</li><li>中转站可能按照其自身条款处理请求内容，部署者应根据实际服务商配置隐私策略和数据保留策略。</li></ul></div></section>
+
+  <section class="section" id="copyright"><h2>版权与服务责任声明</h2><ul><li>本项目代码、界面、文档、图表样式和实验报告模板的著作权归项目权利人或相应贡献者所有；除项目许可证另有规定外，未经许可不得移除署名、冒充官方服务或用于侵权用途。</li><li>Three.js、字体、图标、模型服务和其他第三方组件分别受其各自许可证、服务条款和商标规则约束。</li><li>AI 中转站属于第三方服务。本项目不对第三方服务的可用性、速度、价格、模型输出、数据处理方式或服务连续性作保证。</li><li>部署者负责 API Key、域名、证书、日志、访问控制、用户通知、数据备份和内容审核；因配置错误、密钥泄露或第三方服务导致的损失由部署者依据适用法律处理。</li><li>用户不得利用本平台生成违法、有害、欺诈、侵权、骚扰、绕过安全措施或侵犯他人隐私的内容。</li></ul></section>
+
+  <section class="section" id="compliance"><h2>中国大陆合规性说明</h2><p>本节是面向部署者的工程提示，不构成法律意见，也不能替代律师、网信、公安、通信管理或行业主管部门的正式意见。上线前应结合站点用途、用户范围、数据类型和实际供应商进行专项评估。</p><ul><li>使用中国大陆境内域名和服务器时，应按实际业务办理 ICP 备案；涉及经营性互联网信息服务时，另行评估是否需要经营性许可。</li><li>网站应公开隐私政策、用户协议和必要的 AI 生成内容提示，说明收集的数据、处理目的、保存期限、用户权利和联系渠道。</li><li>仅收集实现实验功能所必需的数据；IP 哈希、实验记录和日志仍可能属于网络或个人信息相关数据，应设置访问权限、保存期限和删除机制。</li><li>未经合法依据和必要告知，不要向境外服务或第三方中转站发送个人信息、敏感个人信息、未公开科研数据、涉密资料或受出口管制的数据。</li><li>涉及未成年人、学校教学、科研项目、公共机构或重要数据时，应由组织方完成更严格的安全、授权、数据分类分级和跨境传输评估。</li><li>AI 输出不得直接作为行政、教育评价、医疗、金融、招聘、执法或其他高影响决定的唯一依据；应保留人工复核和申诉渠道。</li><li>运营者应及时处理投诉、删除违法内容、轮换泄露的密钥，并保存必要的安全事件记录。</li></ul><div class="callout danger">请勿将真实 API Key、身份证号、学生名单、实验参与者联系方式或保密材料提交到公开仓库、浏览器端或第三方 AI 请求中。</div></section>
+
+  <section class="section" id="limits"><h2>已知边界与验证</h2><ul><li>平台展示的是数值仿真，不是经计量认证的实验仪器；真实实验仍需独立测量和误差分析。</li><li>浏览器需要支持现代 JavaScript、Canvas 和 WebGL；低性能设备可能降低可视化帧率，但不应改变固定步长仿真逻辑。</li><li>可运行 <code>npm run build</code> 检查生产构建，运行 <code>npm run test:physics</code> 检查保守系统能量漂移回归。</li><li>本地开发可运行 <code>npm run dev</code>；生产 PHP 部署不需要 Node 进程。</li></ul></section>
+
+  <footer>
+    非线性阻尼单摆数字孪生实验平台 · v2.0.1 · 文档更新时间：2026-11-07
+    <br>
+    中国大陆地区运营：URL Time LLC.
+    <br>
+    服务器运营商及地区：阿里云上海
+  </footer>
+</main>
+</body>
+</html>

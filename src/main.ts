@@ -449,6 +449,7 @@ app.innerHTML = `
       <div class="container footer-inner">
         <div class="footer-content">
           <p>非线性阻尼单摆虚拟仿真实验平台 · 基于 WebGL 与 Three.js 自主开发</p>
+          <p class="footer-record-links"><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">沪ICP备2026008612号-1</a><span class="divider">·</span><a href="https://beian.mps.gov.cn/#/query/webSearch?code=31011502405443" target="_blank" rel="noopener noreferrer">沪公网安备31011502405443号</a></p>
         </div>
       </div>
     </footer>
@@ -1689,6 +1690,19 @@ style.textContent = `
   .footer-content p {
     margin: 0;
   }
+  .footer-record-links {
+    margin-top: 4px !important;
+    font-size: 12px;
+  }
+  .footer-record-links a {
+    color: inherit;
+    text-decoration: none;
+  }
+  .footer-record-links a:hover,
+  .footer-record-links a:focus-visible {
+    color: #fff;
+    text-decoration: underline;
+  }
   @keyframes breathe {
     0%, 100% { transform: translateY(0) scale(1); }
     50% { transform: translateY(-1px) scale(1.01); }
@@ -1913,7 +1927,8 @@ let simTime = 0;
 const stateTrail: Array<{ x: number; y: number }> = [];
 const phaseTrail: Array<{ theta: number; omega: number }> = [];
 const energySamples: SamplePoint[] = [];
-const experimentRecords: Array<{ t: number; theta: number; omega: number; energy: number; id: number; cycle: number }> = [];
+type ExperimentRecord = { t: number; theta: number; omega: number; energy: number; id: number; cycle: number };
+const experimentRecords: ExperimentRecord[] = [];
 type ConversationRole = 'user' | 'assistant';
 type ConversationMessage = { role: ConversationRole; content: string };
 const aiMessages: Array<{ role: 'user' | 'assistant'; title: string; content: string }> = [];
@@ -1938,6 +1953,9 @@ let phaseOmegaRange = 6.5;
 let sceneVisualEnabled = true;
 let paramsDirty = true;
 let renderedRecordCount = -1;
+let experimentRecordsLoaded = false;
+let experimentRecordSaveTimer: number | null = null;
+let experimentRecordSavePending = false;
 let rendererWidth = 0;
 let rendererHeight = 0;
 const FIXED_STEP = 0.00001;
@@ -2248,6 +2266,7 @@ function pushExperimentRecord(theta: number, omega: number) {
   const { total } = computeEnergy(theta, omega);
   experimentRecords.push({ t: simTime, theta, omega, energy: total, id: recordId++, cycle: recordCycle + 1 });
   if (experimentRecords.length > 120) experimentRecords.shift();
+  scheduleExperimentRecordsSave();
 }
 
 
@@ -2786,9 +2805,90 @@ function renderRecords() {
   renderedRecordCount = experimentRecords.length;
 }
 
+async function loadExperimentRecords() {
+  const localRecords = experimentRecords.slice();
+  const hadLocalRecords = localRecords.length > 0;
+  try {
+    const response = await fetch('/api/records.php', { cache: 'no-store' });
+    if (!response.ok) throw new Error('records request failed');
+    const payload = await response.json() as { records?: ExperimentRecord[] };
+    const records = Array.isArray(payload.records) ? payload.records : [];
+    const remoteRecords = records.slice(-120);
+    if (localRecords.length === 0) {
+      experimentRecords.splice(0, experimentRecords.length, ...remoteRecords);
+    } else if (remoteRecords.length > 0) {
+      const nextId = Math.max(0, ...remoteRecords.map((record) => record.id)) + 1;
+      const pendingRecords = localRecords.map((record, index) => ({ ...record, id: nextId + index }));
+      experimentRecords.splice(0, experimentRecords.length, ...[...remoteRecords, ...pendingRecords].slice(-120));
+    }
+    recordId = Math.max(0, ...experimentRecords.map((record) => record.id)) + 1;
+    recordCycle = Math.max(0, ...experimentRecords.map((record) => record.cycle));
+  } catch {
+    if (!hadLocalRecords) {
+      experimentRecords.length = 0;
+      recordId = 1;
+      recordCycle = 0;
+    }
+  } finally {
+    experimentRecordsLoaded = true;
+    renderRecords();
+    if (hadLocalRecords) void saveExperimentRecords();
+  }
+}
+
+async function refreshExperimentRecords() {
+  if (!experimentRecordsLoaded) return;
+  try {
+    const response = await fetch('/api/records.php', { cache: 'no-store' });
+    if (!response.ok) return;
+    const payload = await response.json() as { records?: ExperimentRecord[]; expiresAt?: number | null };
+    if (payload.expiresAt === null && experimentRecords.length > 0 && !experimentRecordSavePending) {
+      experimentRecords.length = 0;
+      recordId = 1;
+      recordCycle = 0;
+      renderRecords();
+    }
+  } catch {
+  }
+}
+
+function scheduleExperimentRecordsSave() {
+  if (!experimentRecordsLoaded) return;
+  experimentRecordSavePending = true;
+  if (experimentRecordSaveTimer !== null) return;
+  experimentRecordSaveTimer = window.setTimeout(() => {
+    experimentRecordSaveTimer = null;
+    if (experimentRecordSavePending) void saveExperimentRecords();
+  }, 250);
+}
+
+async function saveExperimentRecords() {
+  if (!experimentRecordsLoaded) return;
+  experimentRecordSavePending = false;
+  try {
+    const response = await fetch('/api/records.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ records: experimentRecords }),
+      keepalive: true,
+    });
+    if (!response.ok) throw new Error('records save failed');
+  } catch {
+    experimentRecordSavePending = true;
+    scheduleExperimentRecordsSave();
+  }
+}
+
+async function clearSavedExperimentRecords() {
+  try {
+    await fetch('/api/records.php', { method: 'DELETE', keepalive: true });
+  } catch {
+  }
+}
+
 function getAiConfig() {
   return {
-    endpoint: '/api/chat',
+    endpoint: '/api/chat.php',
     apiKey: 'server-side',
   };
 }
@@ -2830,9 +2930,38 @@ function setAiStatus(text: string) {
   aiStatusReadout.classList.toggle('ai-status', text.includes('生成') || text.includes('发送') || text.includes('请求'));
 }
 
-function setAiConfigStatus() {
-  const key = getAiConfig().apiKey;
-  setAiStatus(key ? '已配置' : '未配置');
+async function fetchAiHealth() {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 5000);
+  try {
+    return await fetch('/api/health.php', { cache: 'no-store', signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+async function setAiConfigStatus() {
+  setAiStatus('正在连接 AI 服务');
+  try {
+    const response = await fetchAiHealth();
+    if (!response.ok) throw new Error('health check failed');
+    const health = await response.json() as { configured?: boolean; records?: boolean; providers?: number; models?: number };
+    if (health.records !== true) {
+      setAiStatus('请重启 AI 服务');
+      return;
+    }
+    if (health.configured === false) {
+      setAiStatus('服务端未配置密钥');
+      return;
+    }
+    if (health.configured !== true) {
+      setAiStatus('请重启 AI 服务');
+      return;
+    }
+    setAiStatus(`已连接 · ${health.providers ?? 0}节点 / ${health.models ?? 0}模型`);
+  } catch {
+    setAiStatus('AI 服务未启动');
+  }
 }
 
 function setMode(mode: PendulumMode) {
@@ -3016,14 +3145,53 @@ function buildPhysicsAiMessages(question: string) {
 
 type ChatCompletionChunk = {
   id?: string;
+  error?: { message?: string };
   choices?: Array<{ delta?: { content?: string }; finish_reason?: string | null }>;
 };
+
+async function readAiErrorMessage(response: Response) {
+  let body = '';
+  try {
+    body = await response.text();
+  } catch {
+    return '';
+  }
+  for (const line of body.split(/\r?\n/)) {
+    if (!line.startsWith('data:')) continue;
+    const dataText = line.slice(5).trim();
+    if (!dataText || dataText === '[DONE]') continue;
+    try {
+      const parsed = JSON.parse(dataText) as { error?: { message?: string }; message?: string };
+      const message = parsed.error?.message || parsed.message;
+      if (typeof message === 'string' && message.trim()) return message.trim();
+    } catch {
+      continue;
+    }
+  }
+  return '';
+}
 
 let aiAbortController: AbortController | null = null;
 let aiStreaming = false;
 let aiActiveAssistantIndex = -1;
 let aiActiveUserText = '';
 let aiActiveAssistantText = '';
+
+async function ensureAiService() {
+  try {
+    const response = await fetchAiHealth();
+    if (!response.ok) throw new Error('AI 服务未启动');
+    const health = await response.json() as { configured?: boolean; records?: boolean };
+    if (health.records !== true) throw new Error('PHP AI 服务版本较旧，请重新部署 api 目录。');
+    if (health.configured === false) throw new Error('服务端未配置 AI 密钥，请检查环境变量。');
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'AI 服务未启动';
+    appendAiMessage('assistant', '系统', message);
+    setAiStatus('AI 服务不可用');
+    return false;
+  }
+}
 
 async function callScnetChatStream(question: string, onDelta: (chunk: string) => void) {
   const { endpoint } = getAiConfig();
@@ -3045,6 +3213,8 @@ async function callScnetChatStream(question: string, onDelta: (chunk: string) =>
     }),
   });
   if (!response.ok || !response.body) {
+    const serverMessage = await readAiErrorMessage(response);
+    if (serverMessage) throw new Error(serverMessage);
     if (response.status === 401) throw new Error('密钥不可用，请检查是否已正确配置 AI 服务密钥。');
     if (response.status === 403) throw new Error('当前账号没有权限使用该模型，请确认模型权限或额度。');
     if (response.status === 429) throw new Error('请求太频繁了，请稍后再试。');
@@ -3072,6 +3242,9 @@ async function callScnetChatStream(question: string, onDelta: (chunk: string) =>
       } catch {
         continue;
       }
+      if (typeof parsed?.error?.message === 'string' && parsed.error.message.trim()) {
+        throw new Error(parsed.error.message.trim());
+      }
       if (typeof parsed?.id === 'string') responseId = parsed.id;
       const delta = parsed?.choices?.[0]?.delta?.content;
       if (typeof delta === 'string' && delta) {
@@ -3080,6 +3253,27 @@ async function callScnetChatStream(question: string, onDelta: (chunk: string) =>
       }
     }
   }
+  buffer += decoder.decode();
+  if (buffer.startsWith('data:')) {
+    const dataText = buffer.slice(5).trim();
+    if (dataText && dataText !== '[DONE]') {
+      try {
+        const parsed = JSON.parse(dataText) as ChatCompletionChunk;
+        if (typeof parsed?.error?.message === 'string' && parsed.error.message.trim()) {
+          throw new Error(parsed.error.message.trim());
+        }
+        if (typeof parsed?.id === 'string') responseId = parsed.id;
+        const delta = parsed?.choices?.[0]?.delta?.content;
+        if (typeof delta === 'string' && delta) {
+          fullText += delta;
+          onDelta(fullText);
+        }
+      } catch (error) {
+        if (error instanceof Error && error.message !== 'Unexpected end of JSON input') throw error;
+      }
+    }
+  }
+  if (!fullText) throw new Error('AI 返回了空响应，请稍后重试。');
   if (responseId) localStorage.setItem('scnet-ai-previous-response-id', responseId);
   aiStreaming = false;
   aiAbortController = null;
@@ -3172,6 +3366,7 @@ function resetExperiment() {
   recordBtn.style.background = '';
   resetStopwatch();
   renderRecords();
+  scheduleExperimentRecordsSave();
   updateEnergyReadout(params.theta0, 0);
   if (sceneVisualEnabled) {
     updateScene();
@@ -3729,7 +3924,10 @@ recordBtn.addEventListener('click', () => {
 });
 clearRecordBtn.addEventListener('click', () => {
   experimentRecords.length = 0;
+  recordId = 1;
+  recordCycle = 0;
   renderRecords();
+  void clearSavedExperimentRecords();
 });
 exportCsvBtn.addEventListener('click', exportRecordsToCsv);
 exportPdfBtn.addEventListener('click', openEditableReportOverlay);
@@ -3739,18 +3937,14 @@ renderAiMessages();
 async function sendAiQuestion() {
   const text = aiInput.value.trim();
   if (!text || aiStreaming) return;
-  if (getAiConfig().endpoint === '') {
-    appendAiMessage('assistant', '系统', '未检测到 VITE_DASHSCOPE_API_KEY，请先在环境变量中配置 API Key。');
-    setAiStatus('缺少 API Key');
-    return;
-  }
+  if (!await ensureAiService()) return;
   saveAiConfig();
   appendAiMessage('user', '你', text);
-  const assistantIndex = aiMessages.length;
-  aiActiveAssistantIndex = assistantIndex;
   aiActiveUserText = text;
   aiActiveAssistantText = '';
-  appendAiMessage('assistant', '模型', '');
+  appendAiMessage('assistant', '模型', '正在连接 AI 服务…');
+  const assistantIndex = aiMessages.length - 1;
+  aiActiveAssistantIndex = assistantIndex;
   conversationHistory.push({ role: 'user', content: text });
   if (conversationHistory.length > 12) conversationHistory.splice(0, conversationHistory.length - 12);
   aiInput.value = '';
@@ -3899,6 +4093,8 @@ resetEnergyTracking();
 updateEnergyReadout(engine.getState().theta, engine.getState().omega);
 updateStopwatchDisplay();
 renderRecords();
+void loadExperimentRecords();
+window.setInterval(() => { void refreshExperimentRecords(); }, 60_000);
 seedAiConversation();
 setAiConfigStatus();
 switchAnalysisPanel('record');

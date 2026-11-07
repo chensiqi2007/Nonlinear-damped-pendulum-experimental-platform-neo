@@ -4,8 +4,9 @@
   "version": "2.0.1",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev": "node scripts/dev.mjs",
+    "dev:client": "vite",
+    "build": "tsc -b && vite build && node scripts/copy-php-api.mjs",
     "preview": "vite preview",
     "start": "node server/index.mjs",
     "test:physics": "node tests/pendulum-energy-drift.mjs"
